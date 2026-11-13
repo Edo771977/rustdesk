@@ -1318,8 +1318,13 @@ fn handle_one_frame(
             vpx_no_output = e.is::<scrap::VpxNoOutput>();
             *encode_fail_counter += 1;
             // Encoding errors are not frequent except on Android
-            if !cfg!(target_os = "android") {
-                log::error!("encode fail: {e:?}, times: {}", *encode_fail_counter,);
+            if !cfg!(target_os = "android") && !vpx_no_output {
+                hbb_common::throttled_log!(
+                    std::time::Duration::from_secs(5),
+                    error,
+                    "encode fail: {e:?}, times: {}",
+                    *encode_fail_counter,
+                );
             }
             let max_fail_times = if cfg!(target_os = "android") && encoder.is_hardware() {
                 9

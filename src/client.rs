@@ -2505,7 +2505,11 @@ impl AudioHandler {
             let decoded_frames = match d.decode_float(&frame.data, buffer, false) {
                 Ok(decoded_frames) => decoded_frames,
                 Err(error) => {
-                    log::warn!("Failed to decode audio frame: {error:?}");
+                    hbb_common::throttled_log!(
+                        Duration::from_secs(5),
+                        warn,
+                        "Failed to decode audio frame: {error:?}"
+                    );
                     return;
                 }
             };
@@ -2525,7 +2529,11 @@ impl AudioHandler {
                 ) {
                     Ok(output) => output,
                     Err(error) => {
-                        log::error!("Failed to resample decoded audio: {error:#}");
+                        hbb_common::throttled_log!(
+                            Duration::from_secs(5),
+                            error,
+                            "Failed to resample decoded audio: {error:#}"
+                        );
                         return;
                     }
                 };
@@ -2698,7 +2706,9 @@ impl VideoHandler {
                         } else {
                             self.fail_counter += 1;
                         }
-                        log::error!(
+                        hbb_common::throttled_log!(
+                            Duration::from_secs(5),
+                            error,
                             "Failed to handle video frame, fail counter: {}",
                             self.fail_counter
                         );
@@ -4076,7 +4086,12 @@ pub fn start_video_thread<F, T>(
                                     // 3. If the error does not occur. Switch from A to display B. The error occurs.
                                     //
                                     // to-do: fix the error
-                                    log::error!("handle video frame error, {}", e);
+                                    hbb_common::throttled_log!(
+                                        Duration::from_secs(5),
+                                        error,
+                                        "handle video frame error, {}",
+                                        e
+                                    );
                                     session.refresh_video(display as _);
                                 }
                                 _ => {}
