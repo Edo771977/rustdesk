@@ -1670,7 +1670,9 @@ impl Client {
         // callers fall back to a fresh relay connection rather than proceeding on that channel.
         // Without a trusted identity (absent, or unverifiable under our configured root) no
         // binding is possible at all; WebRTC then proceeds like TCP's non-secure fallback —
-        // DTLS-encrypted but reported unsecured. TCP/UDP/relay keep their existing behavior.
+        // DTLS-encrypted but reported unsecured. TCP/UDP/relay follow the same rule: with a
+        // verified identity, falling back to plaintext would let a relay or on-path attacker
+        // strip encryption and capture the login exchange.
         let is_webrtc = conn.is_webrtc();
         let mut sign_pk = None;
         let mut option_pk = None;
@@ -1748,35 +1750,16 @@ impl Client {
                                     },
                                 )?;
                             } else {
-                                if is_webrtc {
-                                    bail!("WebRTC handshake id mismatch (possible MITM)");
-                                }
-                                log::error!("Handshake failed: sign failure");
-                                conn.send(&Message::new()).await?;
+                                bail!("Handshake id mismatch (possible MITM)");
                             }
                         } else {
-                            if is_webrtc {
-                                bail!("WebRTC peer identity could not be verified (refusing unbound channel)");
-                            }
-                            // fall back to non-secure connection in case pk mismatch
-                            log::info!("pk mismatch, fall back to non-secure");
-                            let mut msg_out = Message::new();
-                            msg_out.set_public_key(PublicKey::new());
-                            conn.send(&msg_out).await?;
+                            bail!("Peer identity could not be verified (possible MITM)");
                         }
                     } else {
-                        if is_webrtc {
-                            bail!("WebRTC handshake received an unexpected message type");
-                        }
-                        log::error!("Handshake failed: invalid message type");
-                        conn.send(&Message::new()).await?;
+                        bail!("Handshake received an unexpected message type");
                     }
                 } else {
-                    if is_webrtc {
-                        bail!("WebRTC handshake received a malformed message");
-                    }
-                    log::error!("Handshake failed: invalid message format");
-                    conn.send(&Message::new()).await?;
+                    bail!("Handshake received a malformed message");
                 }
             }
             None => {
@@ -5935,5 +5918,35 @@ mod kx_tests {
         let (seen, decrypted) = handshake(KX_VERSION_LATEST, Some(0)).await;
         assert_eq!(seen.picked, 1);
         assert!(!seen.decrypted && !decrypted);
+    }
+    #[tokio::test]
+    async fn test_a_tampered_first_frame_from_a_verified_peer_is_refused() {
+        let (rs_pk, rs_sk) = sign::gen_keypair();
+        let (sign_pk, _) = sign::gen_keypair();
+        let signed_id_pk = sign::sign(
+            &IdPk {
+                id: PEER_ID.to_owned(),
+                pk: sign_pk.0.to_vec().into(),
+                ..Default::default()
+            }
+            .write_to_bytes()
+            .unwrap(),
+            &rs_sk,
+        );
+        let listener = hbb_common::tcp::new_listener("127.0.0.1:0", false)
+            .await
+            .unwrap();
+        let host = listener.local_addr().unwrap().to_string();
+        tokio::spawn(async move {
+            let (stream, addr) = listener.accept().await.unwrap();
+            let mut s = FramedStream::from(stream, addr);
+            s.send_raw(vec![0xff; 8]).await.unwrap();
+            let _ = s.next().await;
+        });
+        let mut conn = connect_tcp(host, 3000).await.unwrap();
+        let res =
+            Client::secure_connection(PEER_ID, signed_id_pk, &crate::encode64(rs_pk.0), &mut conn)
+                .await;
+        assert!(res.is_err());
     }
 }
