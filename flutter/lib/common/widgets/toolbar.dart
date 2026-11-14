@@ -1094,7 +1094,7 @@ Future<List<TToggleMenu>> toolbarDisplayToggle(
   // If the version is 1.2.4 or later, file copy and paste is supported when kPlatformAdditionsHasFileClipboard is set.
   final isSupportIfPeer_1_2_4 = versionCmp(pi.version, '1.2.4') >= 0 &&
       bind.mainHasFileClipboard() &&
-      pi.platformAdditions.containsKey(kPlatformAdditionsHasFileClipboard);
+      pi.platformAdditions[kPlatformAdditionsHasFileClipboard] == true;
   if (isDefaultConn &&
       ffiModel.keyboard &&
       perms['file'] != false &&
